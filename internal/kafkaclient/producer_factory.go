@@ -3,7 +3,7 @@ package kafkaclient
 import "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 
 const (
-	bootstrapServers = "127.0.0.1:29092"
+	bootstrapServers = "broker:9092"
 	clientID         = "basic-producer-1"
 )
 
