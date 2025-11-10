@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	consumerBootstrapServers = "broker:29092"
+	consumerBootstrapServers = "broker:9092"
 	consumerGroupID          = "G1"
 )
 

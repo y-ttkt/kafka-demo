@@ -5,14 +5,21 @@ import (
 	"errors"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/y-ttkt/kafka-demo/internal/kafkaclient"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 )
 
-const topic = "ticket-order"
+const (
+	topic          = "ticket-order"
+	httpTargetURL  = "https://httpbin.org/post"
+	httpTimeoutSec = 5
+)
 
 func main() {
 	logger := log.New(os.Stdout, "[consumer] ", log.LstdFlags|log.Lmicroseconds)
@@ -35,6 +42,10 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	httpClient := &http.Client{
+		Timeout: httpTimeoutSec * time.Second,
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -53,13 +64,38 @@ func main() {
 				continue
 			}
 
-			logger.Printf(
-				"Received record: Partition=%d, Key=%s, Value=%s, Offset=%v",
-				msg.TopicPartition.Partition,
-				string(msg.Key),
-				string(msg.Value),
-				msg.TopicPartition.Offset,
+			partition := msg.TopicPartition.Partition
+			offset := msg.TopicPartition.Offset
+			key := string(msg.Key)
+			val := string(msg.Value)
+
+			logger.Printf("Received: Partition=%d Offset=%v Key=%s Value=%s",
+				partition, offset, key, val,
 			)
+
+			go func(body string) {
+				req, err := http.NewRequestWithContext(ctx, http.MethodPost, httpTargetURL, strings.NewReader(body))
+				if err != nil {
+					logger.Printf("failed to create request: %v", err)
+					return
+				}
+				req.Header.Set("Content-Type", "text/plain")
+
+				resp, err := httpClient.Do(req)
+				if err != nil {
+					logger.Printf("failed to send request: %v", err)
+					return
+				}
+				defer resp.Body.Close()
+
+				respBody, err := io.ReadAll(resp.Body)
+				if err != nil {
+					logger.Printf("failed to read http response: %v", err)
+					return
+				}
+
+				logger.Printf("HTTP response: %s", string(respBody))
+			}(val)
 		}
 	}
 }
