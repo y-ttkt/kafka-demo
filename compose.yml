@@ -4,7 +4,7 @@ services:
   app:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: .docker/go/Dockerfile
     ports:
       - "8080:8080"
     volumes:
@@ -24,7 +24,6 @@ services:
 
   broker-1:
     image: docker.io/confluentinc/cp-kafka:7.2.1
-    hostname: broker-1
     container_name: broker-1
     depends_on:
       - zookeeper
@@ -89,8 +88,65 @@ services:
       - broker-2
       - broker-3
     ports:
-      - "9000:9000"
+      - "9002:9000"
     environment:
       KAFKA_BROKERCONNECT: "broker-1:9092,broker-2:9092,broker-3:9092"
       JVM_OPTS: "-Xms32M -Xmx64M"
       SERVER_SERVLET_CONTEXTPATH: "/"
+
+  connect:
+    build:
+      context: .
+      dockerfile: .docker/kafka-connect/Dockerfile
+    container_name: connect
+    depends_on:
+      - broker-1
+      - broker-2
+      - broker-3
+    ports:
+      - "8083:8083"
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: broker-1:9092,broker-2:9092,broker-3:9092
+      CONNECT_ZOOKEEPER_CONNECT: zookeeper:2181
+      CONNECT_REST_PORT: 8083
+      CONNECT_GROUP_ID: "connect-group"
+      CONNECT_CONFIG_STORAGE_TOPIC: "connect-config"
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 2
+      CONNECT_OFFSET_STORAGE_TOPIC: "connect-offsets"
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 2
+      CONNECT_STATUS_STORAGE_TOPIC: "connect-status"
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 2
+      CONNECT_KEY_CONVERTER: "org.apache.kafka.connect.storage.StringConverter"
+      CONNECT_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+      CONNECT_REST_ADVERTISED_HOST_NAME: "localhost"
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadminpassword
+
+  source-database:
+    image: docker.io/library/postgres:14-alpine
+    container_name: source-database
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: connectuser
+      POSTGRES_PASSWORD: secretdayo
+      POSTGRES_DB: irdappdb
+    volumes:
+      - ./data/postgresql:/docker-entrypoint-initdb.d/
+
+  sink-database:
+    image: docker.io/library/redis:7-alpine
+    container_name: sink-database
+    ports:
+      - "6379:6379"
+
+  sink-storage:
+    image: quay.io/minio/minio:RELEASE.2022-07-17T15-43-14Z
+    container_name: sink-storage
+    command: minio server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadminpassword
